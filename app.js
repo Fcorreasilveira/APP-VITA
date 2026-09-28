@@ -2103,6 +2103,7 @@ function finishOnboarding(){
   };
   state = buildEmptyState(profile);
   saveState();
+  if(typeof AppCloud !== 'undefined' && AppCloud.isConfigured()) AppCloud.flushSave();
   UI.onboarding = false;
   Drafts.profileForm = JSON.parse(JSON.stringify(state.profile));
   goTab('inicio');

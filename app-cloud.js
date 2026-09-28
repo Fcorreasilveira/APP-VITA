@@ -63,22 +63,39 @@ const AppCloud = (() => {
   }
 
   let saveTimer = null;
-  function saveRemoteState(stateObj){
+  let pendingState = null;
+  async function flushSave(){
+    if(pendingState == null) return;
     const c = getClient();
     if(!c || !currentUser) return;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const { error } = await c.from('app_state').upsert({
-        user_id: currentUser.id,
-        data: stateObj,
-        updated_at: new Date().toISOString(),
-      });
-      if(error) console.error('saveRemoteState', error);
-    }, 800);
+    saveTimer = null;
+    const toSave = pendingState;
+    pendingState = null;
+    const { error } = await c.from('app_state').upsert({
+      user_id: currentUser.id,
+      data: toSave,
+      updated_at: new Date().toISOString(),
+    });
+    if(error) console.error('saveRemoteState', error);
   }
+  function saveRemoteState(stateObj){
+    const c = getClient();
+    if(!c || !currentUser) return;
+    pendingState = stateObj;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flushSave, 400);
+  }
+  // Em celulares, sair do app (ex: ir pro menu de "Adicionar à Tela de Início")
+  // pode acontecer antes do debounce acima completar — então força o envio
+  // imediato do que estiver pendente assim que a página for ocultada/fechada.
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'hidden') flushSave();
+  });
+  window.addEventListener('pagehide', () => { flushSave(); });
 
   function isConfigured(){ return !!getClient(); }
   function getCurrentUser(){ return currentUser; }
 
-  return { getSession, onAuthChange, signUp, signIn, signOut, loadRemoteState, saveRemoteState, isConfigured, getCurrentUser };
+  return { getSession, onAuthChange, signUp, signIn, signOut, loadRemoteState, saveRemoteState, flushSave, isConfigured, getCurrentUser };
 })();
