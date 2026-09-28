@@ -518,21 +518,109 @@ const COMPOUND_KEYS = new Set([
   'elevacao-pelvica','agachamento-sumo','elevacao-pelvica-maquina',
 ]);
 /* Cada dia separa grupos primários (compostos, multiarticulares — recebem a maior fatia do volume)
-   dos grupos acessórios (isolados, monoarticulares — sempre com volume igual ou menor que o primário pareado). */
-const SPLIT_STRUCTURES = {
-  iniciante: [
-    [ { name:'Treino A', primary:['Pernas','Peito'], accessory:[] }, { name:'Treino B', primary:['Costas','Ombro'], accessory:[] }, { name:'Treino C', primary:['Pernas'], accessory:['Bíceps','Tríceps','Abdômen'] } ],
-    [ { name:'Treino A', primary:['Peito','Costas'], accessory:[] }, { name:'Treino B', primary:['Pernas','Glúteos'], accessory:[] }, { name:'Treino C', primary:['Ombro'], accessory:['Bíceps','Tríceps','Abdômen'] } ],
-  ],
-  intermediario: [
-    [ { name:'Treino A', primary:['Peito','Ombro'], accessory:['Tríceps'] }, { name:'Treino B', primary:['Pernas','Glúteos'], accessory:[] }, { name:'Treino C', primary:['Costas'], accessory:['Bíceps'] }, { name:'Treino D', primary:['Pernas'], accessory:['Abdômen'] } ],
-    [ { name:'Treino A', primary:['Peito'], accessory:['Tríceps'] }, { name:'Treino B', primary:['Costas'], accessory:['Bíceps'] }, { name:'Treino C', primary:['Pernas','Glúteos'], accessory:[] }, { name:'Treino D', primary:['Ombro'], accessory:['Abdômen'] } ],
-  ],
-  avancado: [
-    [ { name:'Treino A', primary:['Peito'], accessory:['Tríceps'] }, { name:'Treino B', primary:['Costas'], accessory:['Bíceps'] }, { name:'Treino C', primary:['Pernas'], accessory:[] }, { name:'Treino D', primary:['Ombro'], accessory:['Abdômen'] }, { name:'Treino E', primary:['Glúteos','Pernas'], accessory:[] } ],
-    [ { name:'Treino A', primary:['Peito','Ombro'], accessory:['Tríceps'] }, { name:'Treino B', primary:['Costas'], accessory:['Bíceps'] }, { name:'Treino C', primary:['Pernas','Glúteos'], accessory:[] }, { name:'Treino D', primary:['Peito','Costas'], accessory:[] }, { name:'Treino E', primary:['Pernas'], accessory:['Abdômen'] } ],
-  ],
+   dos grupos acessórios (isolados, monoarticulares — sempre com volume igual ou menor que o primário pareado).
+   Os "arquétipos" abaixo são os blocos de dia reconhecidos na literatura de treinamento (push/pull/legs,
+   upper/lower, dia dedicado por grupo) — a semana é montada escolhendo entre eles, não de um molde fixo,
+   para que o foco muscular do usuário realmente determine quais grupos viram primários e com que frequência
+   aparecem, em vez de só ajustar levemente um layout sempre igual. */
+const DAY_ARCHETYPES = {
+  peito:   { primary:['Peito'],            accessory:['Tríceps'] },
+  costas:  { primary:['Costas'],           accessory:['Bíceps'] },
+  ombro:   { primary:['Ombro'],            accessory:['Abdômen'] },
+  pernas:  { primary:['Pernas'],           accessory:['Abdômen'] },
+  gluteos: { primary:['Glúteos','Pernas'], accessory:[] },
+  push:    { primary:['Peito','Ombro'],    accessory:['Tríceps'] },
+  pull:    { primary:['Costas'],           accessory:['Bíceps'] },
+  upper:   { primary:['Peito','Costas'],   accessory:['Ombro'] },
+  lower:   { primary:['Pernas','Glúteos'], accessory:['Abdômen'] },
+  bracos:  { primary:['Bíceps','Tríceps'], accessory:['Abdômen'] },
+  core:    { primary:['Abdômen'],          accessory:[] },
 };
+function archetypesFeaturingPrimary(group){
+  return Object.keys(DAY_ARCHETYPES).filter(k => DAY_ARCHETYPES[k].primary.includes(group));
+}
+function shuffleSeeded(arr, rng){
+  const copy = arr.slice();
+  for(let i = copy.length - 1; i > 0; i--){
+    const j = Math.floor(rng() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+function focusToGroups(focus){
+  const groups = [];
+  (focus || []).forEach(f => (FOCUS_GROUPS[f] || []).forEach(g => { if(!groups.includes(g)) groups.push(g); }));
+  return groups;
+}
+/* Evita repetir o mesmo grupo primário em dias consecutivos: a ordem da estrutura vira a ordem da semana
+   (segunda, terça, ...), então dois dias seguidos batendo no mesmo grupo cortam o descanso entre estímulos. */
+function orderAvoidingAdjacentRepeats(keys, rng){
+  const arr = shuffleSeeded(keys, rng);
+  const groupsOf = k => DAY_ARCHETYPES[k].primary;
+  const conflicts = (a, b) => a != null && b != null && groupsOf(a).some(g => groupsOf(b).includes(g));
+  for(let pass = 0; pass < 8; pass++){
+    let ok = true;
+    for(let i = 0; i < arr.length - 1; i++){
+      if(conflicts(arr[i], arr[i + 1])){
+        ok = false;
+        for(let j = i + 2; j < arr.length; j++){
+          if(!conflicts(arr[i], arr[j]) && !conflicts(arr[j], arr[i + 1])){
+            [arr[i + 1], arr[j]] = [arr[j], arr[i + 1]];
+            break;
+          }
+        }
+      }
+    }
+    if(ok) break;
+  }
+  return arr;
+}
+function buildSmartStructure(level, focus, levelDays, variationIndex, nonce){
+  const rng = seededRng(`struct|${level}|${(focus || []).join(',')}|${levelDays}|${variationIndex}|${nonce}`);
+  const focusGroups = focusToGroups(focus);
+  const chosen = [];
+  const pickFor = (group, avoidKeys) => {
+    const fresh = shuffleSeeded(archetypesFeaturingPrimary(group), rng).filter(k => !avoidKeys.includes(k));
+    if(fresh.length) return fresh[0];
+    return shuffleSeeded(archetypesFeaturingPrimary(group), rng)[0];
+  };
+
+  // 1ª passada: garante ao menos 1x/semana pra cada grupo de foco escolhido pelo usuário
+  focusGroups.forEach(g => { if(chosen.length < levelDays) chosen.push(pickFor(g, [])); });
+  // passadas extras: dá uma 2ª (e, com semana de 5+ dias, até 3ª) aparição pros grupos de foco —
+  // frequência maior é o principal driver de mais estímulo semanal por grupo.
+  const extraRounds = levelDays >= 5 ? 2 : 1;
+  for(let r = 0; r < extraRounds; r++){
+    focusGroups.forEach(g => {
+      if(chosen.length >= levelDays) return;
+      const already = chosen.filter(k => DAY_ARCHETYPES[k].primary.includes(g));
+      chosen.push(pickFor(g, already));
+    });
+  }
+  // cobertura mínima: Peito, Costas e Pernas aparecem ao menos 1x/semana mesmo sem foco nelas
+  ['Peito', 'Costas', 'Pernas'].forEach(g => {
+    if(chosen.length >= levelDays) return;
+    const covered = chosen.some(k => DAY_ARCHETYPES[k].primary.includes(g));
+    if(!covered) chosen.push(pickFor(g, []));
+  });
+  // preenche o restante da semana com variedade entre os arquétipos ainda não usados
+  const pool = shuffleSeeded(Object.keys(DAY_ARCHETYPES), rng);
+  let poolIdx = 0;
+  while(chosen.length < levelDays){
+    let picked = null;
+    for(let tries = 0; tries < pool.length; tries++){
+      const cand = pool[poolIdx % pool.length]; poolIdx++;
+      if(!chosen.includes(cand)){ picked = cand; break; }
+    }
+    chosen.push(picked || pool[poolIdx++ % pool.length]);
+  }
+
+  const ordered = orderAvoidingAdjacentRepeats(chosen.slice(0, levelDays), rng);
+  return ordered.map((key, i) => {
+    const a = DAY_ARCHETYPES[key];
+    return { name:`Treino ${String.fromCharCode(65 + i)}`, primary:a.primary.slice(), accessory:a.accessory.slice() };
+  });
+}
 const SPLIT_TYPE_OPTIONS = ['padrao','fullbody'];
 const SPLIT_TYPE_LABELS = { padrao:'Divisão por grupo', fullbody:'Corpo inteiro (Fullbody)' };
 const SPLIT_TYPE_NOTES = {
@@ -566,15 +654,21 @@ function focusNote(focus){
 }
 const FULLBODY_GROUP_CYCLE = ['Pernas','Peito','Costas','Ombro','Glúteos','Bíceps','Tríceps','Abdômen'];
 const SEX_REP_ADJUST = { M:0, F:1 };
-function buildFullbodyStructure(days, variationIndex){
-  const cycle = FULLBODY_GROUP_CYCLE;
-  const start = (variationIndex * 3) % cycle.length;
-  const rotated = [...cycle.slice(start), ...cycle.slice(0, start)];
+function buildFullbodyStructure(days, focus, variationIndex, nonce){
+  const focusGroups = focusToGroups(focus);
+  const rng = seededRng(`fullbody|${days}|${(focus || []).join(',')}|${variationIndex}|${nonce}`);
+  const others = shuffleSeeded(FULLBODY_GROUP_CYCLE.filter(g => !focusGroups.includes(g)), rng);
   const groupsPerDay = 3;
   const structure = [];
+  let otherIdx = 0;
   for(let d = 0; d < days; d++){
-    const groups = [];
-    for(let g = 0; g < groupsPerDay; g++) groups.push(rotated[(d * groupsPerDay + g) % rotated.length]);
+    // no fullbody, cada sessão passa pelo corpo inteiro — os grupos de foco entram em TODA sessão
+    // (máxima frequência possível), o resto do slot roda entre os demais grupos pra variar.
+    const groups = focusGroups.slice(0, groupsPerDay);
+    while(groups.length < groupsPerDay){
+      groups.push(others[otherIdx % others.length]);
+      otherIdx++;
+    }
     structure.push({ name:`Treino ${String.fromCharCode(65 + d)}`, primary:Array.from(new Set(groups)), accessory:[] });
   }
   return structure;
@@ -663,6 +757,9 @@ const DAY_THEMES = {
   'Peito|Tríceps':'💥 Impacto Frontal',
   'Abdômen|Ombro':'🌪️ Ombros em Fúria',
   'Pernas':'🐘 Dia da Perna',
+  'Costas|Ombro|Peito':'🏔️ Superior Completo',
+  'Abdômen|Glúteos|Pernas':'⛰️ Inferior Completo',
+  'Abdômen':'🔥 Core em Chamas',
 };
 function groupSignature(groups){ return [...groups].sort().join('|'); }
 function dayThemeName(groups){ return DAY_THEMES[groupSignature(groups)] || `💪 ${groups.join(' & ')}`; }
@@ -712,8 +809,8 @@ function generateVariation(goal, level, variationIndex, nonce, focus, sex, durat
   duration = TIME_EX_PER_DAY[duration] ? duration : 90;
   const levelDays = LEVEL_DAYS[level] || 4;
   const structure = splitType === 'fullbody'
-    ? buildFullbodyStructure(levelDays, variationIndex)
-    : (SPLIT_STRUCTURES[level] || SPLIT_STRUCTURES.intermediario)[variationIndex % (SPLIT_STRUCTURES[level] || SPLIT_STRUCTURES.intermediario).length];
+    ? buildFullbodyStructure(levelDays, focus, variationIndex, nonce)
+    : buildSmartStructure(level, focus, levelDays, variationIndex, nonce);
   const tier = INTENSITY_TIERS[variationIndex % INTENSITY_TIERS.length];
   const goalCfg = REP_RANGE_BY_GOAL[goal] || REP_RANGE_BY_GOAL.manter;
   const sets = Math.max(2, goalCfg.sets + (LEVEL_SET_ADJUST[level] || 0) + tier.setAdj + (TIME_SET_ADJUST[duration] || 0));
