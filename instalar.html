@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Instalar o VITA</title>
+<link rel="icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#FF5A36">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ink:#14181B; --ink-soft:#586066; --paper:#F5F3EE; --surface:#FFFFFF; --surface-sunken:#ECE9E1; --border:#DEDACF;
+    --accent:#FF5A36; --accent-ink:#FFFFFF; --good:#57C77E;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --ink:#F2F1EC; --ink-soft:#ADA79A; --paper:#0E1012; --surface:#1B1E20; --surface-sunken:#24292B; --border:#33393C; --accent:#FF7A57; --good:#57C77E; }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--paper); color:var(--ink); font-family:'IBM Plex Sans',system-ui,sans-serif; padding-block:24px; }
+  .wrap{ max-width:460px; margin:0 auto; padding-inline:20px; }
+  .logo{ display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+  .logo img{ width:44px; height:44px; border-radius:12px; }
+  .logo b{ font-family:'Big Shoulders Display',sans-serif; font-weight:800; font-size:26px; }
+  h1{ font-family:'Big Shoulders Display',sans-serif; font-weight:800; font-size:24px; margin:6px 0 4px; }
+  p{ line-height:1.5; color:var(--ink-soft); margin:6px 0 0; }
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; margin-top:16px; }
+  .steps{ margin:10px 0 0; padding:0; list-style:none; }
+  .steps li{ display:flex; gap:12px; padding:10px 0; border-top:1px solid var(--border); }
+  .steps li:first-child{ border-top:none; }
+  .num{ flex:none; width:26px; height:26px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+    display:grid; place-items:center; font-weight:700; font-size:13px; }
+  .steptext{ flex:1; padding-top:2px; }
+  .steptext b{ display:block; margin-bottom:2px; }
+  .btn{ display:block; width:100%; border:none; border-radius:12px; padding:14px; font-weight:700; font-size:15px;
+    cursor:pointer; text-align:center; text-decoration:none; margin-top:10px; }
+  .btn-primary{ background:var(--accent); color:var(--accent-ink); }
+  .btn-ghost{ background:var(--surface-sunken); color:var(--ink); }
+  .note{ background:var(--surface-sunken); border-radius:12px; padding:12px 14px; margin-top:14px; font-size:13.5px; color:var(--ink-soft); }
+  .hidden{ display:none !important; }
+  .toast{ position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--ink); color:var(--paper);
+    padding:10px 18px; border-radius:10px; font-size:14px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s; }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo"><img src="icons/icon-192.png" alt=""><b>VITA</b></div>
+  <h1>Instalar o app no seu celular</h1>
+  <p>Leva menos de 1 minuto — depois disso o VITA fica com ícone próprio na sua tela, como qualquer outro app.</p>
+
+  <div id="warn-inapp" class="note hidden">
+    ⚠️ Você abriu esse link de dentro de outro app (WhatsApp, Instagram etc). Isso pode impedir a instalação.
+    Toque no botão abaixo pra copiar o link e cole no <strong id="warn-browser">navegador</strong> — aí sim vai funcionar.
+  </div>
+
+  <button class="btn btn-ghost" onclick="copyLink()">📋 Copiar link do app</button>
+
+  <div id="android-install" class="card hidden">
+    <h3 style="margin:0 0 6px;">Instalar no Android</h3>
+    <button id="btn-native-install" class="btn btn-primary hidden" onclick="nativeInstall()">⬇️ Instalar agora</button>
+    <ol class="steps" id="android-steps">
+      <li><span class="num">1</span><div class="steptext"><b>Abra esse link no Chrome</b>se ainda não estiver nele.</div></li>
+      <li><span class="num">2</span><div class="steptext"><b>Toque nos 3 pontinhos (⋮)</b>no canto superior direito.</div></li>
+      <li><span class="num">3</span><div class="steptext"><b>Toque em "Instalar app"</b>(ou "Adicionar à tela inicial").</div></li>
+      <li><span class="num">4</span><div class="steptext"><b>Confirme</b>— pronto, o ícone do VITA aparece na sua tela.</div></li>
+    </ol>
+  </div>
+
+  <div id="ios-install" class="card hidden">
+    <h3 style="margin:0 0 6px;">Instalar no iPhone</h3>
+    <ol class="steps">
+      <li><span class="num">1</span><div class="steptext"><b>Abra esse link no Safari</b>(precisa ser o Safari, não funciona em outro navegador).</div></li>
+      <li><span class="num">2</span><div class="steptext"><b>Toque no ícone de compartilhar</b>(o quadrado com a seta ↑), na barra de baixo.</div></li>
+      <li><span class="num">3</span><div class="steptext"><b>Role e toque em "Adicionar à Tela de Início"</b></div></li>
+      <li><span class="num">4</span><div class="steptext"><b>Toque em "Adicionar"</b>— pronto, o ícone do VITA aparece na sua tela.</div></li>
+    </ol>
+  </div>
+
+  <div id="desktop-note" class="card hidden">
+    <h3 style="margin:0 0 6px;">Você está no computador</h3>
+    <p style="margin:0;">Pra instalar como app, abra esse link no <strong>celular</strong> (copie o link acima e envie pra você mesmo, ou leia o QR code se tiver um). No computador, dá pra usar o VITA normalmente pelo navegador.</p>
+  </div>
+
+  <a class="btn btn-primary" href="./" style="margin-top:16px;">Já instalei — abrir o VITA</a>
+</div>
+<div id="toast" class="toast">Link copiado!</div>
+
+<script>
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+function copyLink(){
+  const url = location.origin + '/';
+  navigator.clipboard.writeText(url).then(() => showToast('Link copiado! Cole no navegador.'))
+    .catch(() => { prompt('Copie o link:', url); });
+}
+
+const ua = navigator.userAgent || '';
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(ua);
+const isInApp = /FBAN|FBAV|Instagram|Line\/|MicroMessenger|WhatsApp/i.test(ua) ||
+  (isIOS && !/Safari/.test(ua)) || // Safari real no iOS sempre inclui "Safari" no UA; webviews embutidos geralmente não
+  (isAndroid && /; wv\)/.test(ua)); // Android WebView
+
+if(isInApp){
+  document.getElementById('warn-inapp').classList.remove('hidden');
+  document.getElementById('warn-browser').textContent = isIOS ? 'Safari' : 'Chrome';
+}
+if(isIOS){
+  document.getElementById('ios-install').classList.remove('hidden');
+} else if(isAndroid){
+  document.getElementById('android-install').classList.remove('hidden');
+} else {
+  document.getElementById('desktop-note').classList.remove('hidden');
+}
+
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('btn-native-install');
+  if(btn){
+    btn.classList.remove('hidden');
+    document.getElementById('android-steps').classList.add('hidden');
+  }
+});
+function nativeInstall(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.finally(() => { deferredPrompt = null; });
+}
+</script>
+</body>
+</html>
