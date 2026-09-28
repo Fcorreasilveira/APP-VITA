@@ -304,7 +304,6 @@ const EXERCISE_PHOTOS = {
   'flexao-braco': 'exercise-photos/flexao-braco.jpg',
   'paralelas-peito': 'exercise-photos/paralelas-peito.jpg',
   'puxada-frente': 'exercise-photos/puxada-frente.jpg',
-  'puxada-atras': 'exercise-photos/puxada-atras.jpg',
   'remada-curvada-barra': 'exercise-photos/remada-curvada-barra.jpg',
   'remada-cavalinho': 'exercise-photos/remada-cavalinho.jpg',
   'remada-unilateral-halter': 'exercise-photos/remada-unilateral-halter.jpg',
@@ -379,7 +378,6 @@ const EXERCISE_CATALOG = {
   ],
   'Costas': [
     { key:'puxada-frente', name:'Puxada frente (pulley)', illust:'pulldown', equipment:'cable', desc:'Sentado, puxe a barra até a altura do peito, cotovelos para baixo.' },
-    { key:'puxada-atras', name:'Puxada atrás (pulley)', illust:'pulldown', equipment:'cable', desc:'Puxe a barra atrás da nuca — cuidado com a mobilidade de ombro.' },
     { key:'remada-curvada-barra', name:'Remada curvada (barra)', illust:'row-bent', equipment:'barbell', desc:'Tronco inclinado à frente, puxe a barra até o abdômen.' },
     { key:'remada-cavalinho', name:'Remada cavalinho (T-bar)', illust:'row-seated', equipment:'machine', desc:'Apoie o peito e puxe a barra em T em direção ao tronco.' },
     { key:'remada-unilateral-halter', name:'Remada unilateral (halter)', illust:'row-bent', equipment:'dumbbell', desc:'Apoiado no banco com um joelho, puxe o halter até a cintura.' },
@@ -512,7 +510,7 @@ const REP_RANGE_BY_GOAL = {
 };
 const COMPOUND_KEYS = new Set([
   'supino-reto-barra','supino-inclinado-barra','supino-reto-halteres','supino-inclinado-halteres','supino-maquina','flexao-braco','paralelas-peito',
-  'puxada-frente','puxada-atras','remada-curvada-barra','remada-cavalinho','remada-unilateral-halter','remada-baixa-cabo','barra-fixa','levantamento-terra','pulldown-reto',
+  'puxada-frente','remada-curvada-barra','remada-cavalinho','remada-unilateral-halter','remada-baixa-cabo','barra-fixa','levantamento-terra','pulldown-reto',
   'desenvolvimento-militar-barra','desenvolvimento-halteres','desenvolvimento-maquina','remada-alta-barra',
   'agachamento-livre','agachamento-smith','leg-press','stiff-barra','afundo-halteres','passada',
   'elevacao-pelvica','agachamento-sumo','elevacao-pelvica-maquina',
