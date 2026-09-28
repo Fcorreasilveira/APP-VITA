@@ -435,12 +435,12 @@ const EXERCISE_CATALOG = {
     { key:'elevacao-pelvica-maquina', name:'Elevação pélvica (máquina)', illust:'hip-thrust', equipment:'machine', desc:'Eleve o quadril na máquina específica, apertando o glúteo no topo.' },
   ],
   'Abdômen': [
-    { key:'abdominal-supra', name:'Abdominal supra (crunch)', illust:'core', equipment:'bodyweight', desc:'Deitado, flexione o tronco em direção aos joelhos.' },
-    { key:'abdominal-infra', name:'Abdominal infra (elevação de pernas)', illust:'core', equipment:'bodyweight', desc:'Deitado, mantenha a lombar apoiada no chão e eleve as pernas em direção ao teto contraindo o abdômen inferior.' },
-    { key:'prancha', name:'Prancha (plank)', illust:'core', equipment:'bodyweight', desc:'Apoiado nos antebraços e pés, mantenha o corpo reto e o abdômen contraído.' },
-    { key:'abdominal-cabo', name:'Abdominal na polia (cabo)', illust:'core', equipment:'cable', desc:'Ajoelhado, flexione o tronco puxando o cabo para baixo com o abdômen.' },
-    { key:'abdominal-obliquo', name:'Abdominal oblíquo', illust:'core', equipment:'bodyweight', desc:'Gire o tronco lateralmente para trabalhar os oblíquos.' },
-    { key:'elevacao-pernas-barra', name:'Elevação de pernas na barra', illust:'core', equipment:'bodyweight', desc:'Pendurado na barra, eleve as pernas com controle (sem balançar o corpo) contraindo o abdômen.' },
+    { key:'abdominal-supra', name:'Abdominal supra (crunch)', illust:'core', equipment:'bodyweight', pattern:'flexao', desc:'Deitado, flexione o tronco em direção aos joelhos.' },
+    { key:'abdominal-infra', name:'Abdominal infra (elevação de pernas)', illust:'core', equipment:'bodyweight', pattern:'flexao', desc:'Deitado, mantenha a lombar apoiada no chão e eleve as pernas em direção ao teto contraindo o abdômen inferior.' },
+    { key:'prancha', name:'Prancha (plank)', illust:'core', equipment:'bodyweight', pattern:'anti-extensao', desc:'Apoiado nos antebraços e pés, mantenha o corpo reto e o abdômen contraído.' },
+    { key:'abdominal-cabo', name:'Abdominal na polia (cabo)', illust:'core', equipment:'cable', pattern:'flexao', desc:'Ajoelhado, flexione o tronco puxando o cabo para baixo com o abdômen.' },
+    { key:'abdominal-obliquo', name:'Abdominal oblíquo', illust:'core', equipment:'bodyweight', pattern:'rotacao', desc:'Gire o tronco lateralmente para trabalhar os oblíquos.' },
+    { key:'elevacao-pernas-barra', name:'Elevação de pernas na barra', illust:'core', equipment:'bodyweight', pattern:'flexao', desc:'Pendurado na barra, eleve as pernas com controle (sem balançar o corpo) contraindo o abdômen.' },
   ],
   'Corpo inteiro': [
     { key:'burpee', name:'Burpee', illust:'dynamic', equipment:'bodyweight', desc:'Agache, jogue as pernas para trás, faça uma flexão e salte de volta em pé.' },
@@ -524,13 +524,29 @@ const DAY_ARCHETYPES = {
   costas:  { primary:['Costas'],           accessory:['Bíceps'] },
   ombro:   { primary:['Ombro'],            accessory:['Abdômen'] },
   pernas:  { primary:['Pernas'],           accessory:['Abdômen'] },
-  gluteos: { primary:['Glúteos','Pernas'], accessory:[] },
+  gluteos: { primary:['Glúteos','Pernas'], accessory:['Abdômen'] },
   push:    { primary:['Peito','Ombro'],    accessory:['Tríceps'] },
-  pull:    { primary:['Costas'],           accessory:['Bíceps'] },
   upper:   { primary:['Peito','Costas'],   accessory:['Ombro'] },
-  lower:   { primary:['Pernas','Glúteos'], accessory:['Abdômen'] },
   bracos:  { primary:['Bíceps','Tríceps'], accessory:['Abdômen'] },
-  core:    { primary:['Abdômen'],          accessory:[] },
+};
+/* 'pull' (Costas/Bíceps) e 'lower' (Pernas+Glúteos/Abdômen) foram removidos por serem duplicatas
+   exatas de 'costas' e 'gluteos' — duas chaves com a mesma composição inflavam sem querer a chance
+   de um mesmo grupo (ex: Costas) ser escolhido duas vezes na semana, com nomes diferentes. */
+/* Abdômen nunca vira "dia principal" (não existe arquétipo com Abdômen em primary): evidência de
+   treinadores e literatura (NASM, NSCA; McGill sobre evitar volume alto de flexão de coluna repetida)
+   aponta 1 a 3 exercícios diretos de core por sessão, com frequência de 2 a 4x/semana — não uma
+   sessão inteira de 6+ exercícios do mesmo padrão de movimento. Por isso o core entra sempre como
+   acessório de outro grupo.
+   Teto de exercícios DIRETOS por grupo muscular numa mesma sessão — mesmo num "dia dedicado"
+   (ex: dia de ombro), volume direto além disso é sobreposição de estímulo com retorno decrescente
+   (Schoenfeld et al. sobre volume por sessão) e mais fadiga/risco em articulações menores, sem
+   ganho extra de hipertrofia. Grupos grandes (Peito/Costas/Pernas) toleram mais exercícios diretos
+   num dia clássico de "bro split"; Ombro/Glúteos/Braços ficam um pouco abaixo; Abdômen no mínimo
+   da faixa (1 a 3) por ser um grupo pequeno treinado com muita frequência via acessório. */
+const GROUP_MAX_PER_SESSION = {
+  'Peito':5, 'Costas':5, 'Pernas':5,
+  'Ombro':4, 'Glúteos':4, 'Bíceps':4, 'Tríceps':4,
+  'Abdômen':3,
 };
 function archetypesFeaturingPrimary(group){
   return Object.keys(DAY_ARCHETYPES).filter(k => DAY_ARCHETYPES[k].primary.includes(group));
@@ -571,23 +587,44 @@ function orderAvoidingAdjacentRepeats(keys, rng){
   }
   return arr;
 }
+/* Quanto um grupo muscular já está "carregado" na semana em construção — cada aparição como grupo
+   primário conta 1, como acessório conta meio ponto. Usado pra escolher entre arquétipos concorrentes
+   sem deixar a semana concentrar demais num só grupo (ex: Ombro entrando via 'ombro', 'push' e 'upper'
+   ao mesmo tempo) — a literatura (Schoenfeld et al.) aponta ~2x/semana por grupo como a frequência que
+   maximiza hipertrofia num dado volume semanal, então a estrutura preza por distribuir, não empilhar. */
+function weeklyLoadScore(chosenKeys, group){
+  return chosenKeys.reduce((n, k) => {
+    const a = DAY_ARCHETYPES[k];
+    return n + (a.primary.includes(group) ? 1 : 0) + (a.accessory.includes(group) ? 0.5 : 0);
+  }, 0);
+}
+function archetypeLoadCost(key, chosenKeys){
+  return DAY_ARCHETYPES[key].primary.reduce((s, g) => s + weeklyLoadScore(chosenKeys, g), 0);
+}
 function buildSmartStructure(level, focus, levelDays, variationIndex, nonce){
   const rng = seededRng(`struct|${level}|${(focus || []).join(',')}|${levelDays}|${variationIndex}|${nonce}`);
   const focusGroups = focusToGroups(focus);
+  // grupos que nunca viram "dia principal" (hoje só o Abdômen — sempre entra como acessório de outro dia)
+  const structuralFocusGroups = focusGroups.filter(g => archetypesFeaturingPrimary(g).length > 0);
+  const wantsCoreFocus = focusGroups.includes('Abdômen');
   const chosen = [];
+  // entre os arquétipos candidatos pro grupo pedido, prefere o que menos sobrepõe grupos já usados na semana
+  // (ex: pra Pernas, prioriza 'pernas' puro em vez de 'gluteos'/'lower' se Glúteos já apareceu bastante)
   const pickFor = (group, avoidKeys) => {
-    const fresh = shuffleSeeded(archetypesFeaturingPrimary(group), rng).filter(k => !avoidKeys.includes(k));
-    if(fresh.length) return fresh[0];
-    return shuffleSeeded(archetypesFeaturingPrimary(group), rng)[0];
+    const candidates = archetypesFeaturingPrimary(group).filter(k => !avoidKeys.includes(k));
+    const pool = candidates.length ? candidates : archetypesFeaturingPrimary(group);
+    if(pool.length === 0) return undefined;
+    const shuffled = shuffleSeeded(pool, rng);
+    return shuffled.reduce((best, k) => archetypeLoadCost(k, chosen) < archetypeLoadCost(best, chosen) ? k : best, shuffled[0]);
   };
 
   // 1ª passada: garante ao menos 1x/semana pra cada grupo de foco escolhido pelo usuário
-  focusGroups.forEach(g => { if(chosen.length < levelDays) chosen.push(pickFor(g, [])); });
+  structuralFocusGroups.forEach(g => { if(chosen.length < levelDays) chosen.push(pickFor(g, [])); });
   // passadas extras: dá uma 2ª (e, com semana de 5+ dias, até 3ª) aparição pros grupos de foco —
   // frequência maior é o principal driver de mais estímulo semanal por grupo.
   const extraRounds = levelDays >= 5 ? 2 : 1;
   for(let r = 0; r < extraRounds; r++){
-    focusGroups.forEach(g => {
+    structuralFocusGroups.forEach(g => {
       if(chosen.length >= levelDays) return;
       const already = chosen.filter(k => DAY_ARCHETYPES[k].primary.includes(g));
       chosen.push(pickFor(g, already));
@@ -599,16 +636,16 @@ function buildSmartStructure(level, focus, levelDays, variationIndex, nonce){
     const covered = chosen.some(k => DAY_ARCHETYPES[k].primary.includes(g));
     if(!covered) chosen.push(pickFor(g, []));
   });
-  // preenche o restante da semana com variedade entre os arquétipos ainda não usados
-  const pool = shuffleSeeded(Object.keys(DAY_ARCHETYPES), rng);
-  let poolIdx = 0;
+  // preenche o restante da semana priorizando, a cada vaga, o arquétipo ainda não usado que menos
+  // sobrecarrega grupos já presentes — evita que a ordem aleatória do pool empilhe por acaso o mesmo
+  // grupo (ex: Ombro) em 3 dos 5 dias. Se o usuário pediu foco em Core, ainda dá uma leve preferência
+  // pra arquétipos que trazem Abdômen de acessório, pra aumentar a frequência semanal de core.
+  const remainingPool = shuffleSeeded(Object.keys(DAY_ARCHETYPES), rng);
   while(chosen.length < levelDays){
-    let picked = null;
-    for(let tries = 0; tries < pool.length; tries++){
-      const cand = pool[poolIdx % pool.length]; poolIdx++;
-      if(!chosen.includes(cand)){ picked = cand; break; }
-    }
-    chosen.push(picked || pool[poolIdx++ % pool.length]);
+    const candidates = remainingPool.filter(k => !chosen.includes(k));
+    const pool = candidates.length ? candidates : remainingPool;
+    const cost = k => archetypeLoadCost(k, chosen) + (wantsCoreFocus && !DAY_ARCHETYPES[k].accessory.includes('Abdômen') ? 0.75 : 0);
+    chosen.push(pool.reduce((best, k) => cost(k) < cost(best) ? k : best, pool[0]));
   }
 
   const ordered = orderAvoidingAdjacentRepeats(chosen.slice(0, levelDays), rng);
@@ -669,9 +706,10 @@ function buildFullbodyStructure(days, focus, variationIndex, nonce){
   }
   return structure;
 }
-function allocateExerciseCounts(groups, total, weightsMap){
+function allocateExerciseCounts(groups, total, weightsMap, capsMap){
   if(groups.length === 0) return [];
   weightsMap = weightsMap || {};
+  capsMap = capsMap || {};
   const weights = groups.map(g => weightsMap[g] || 1);
   const sumW = weights.reduce((a,b) => a + b, 0);
   const counts = weights.map(w => Math.max(1, Math.round(total * w / sumW)));
@@ -686,18 +724,31 @@ function allocateExerciseCounts(groups, total, weightsMap){
     if(idx === -1) break;
     counts[idx]--; diff++;
   }
+  // teto por grupo (ex: Abdômen no máx. 3/sessão) — excedente é redistribuído pros demais grupos do dia
+  let overflow = 0;
+  groups.forEach((g, i) => {
+    const cap = capsMap[g];
+    if(cap != null && counts[i] > cap){ overflow += counts[i] - cap; counts[i] = cap; }
+  });
+  while(overflow > 0){
+    const eligible = groups.map((_, i) => i).filter(i => { const cap = capsMap[groups[i]]; return cap == null || counts[i] < cap; });
+    if(eligible.length === 0) break;
+    let idx = eligible[0], maxW = -1;
+    eligible.forEach(i => { if(weights[i] > maxW){ maxW = weights[i]; idx = i; } });
+    counts[idx]++; overflow--;
+  }
   return counts;
 }
 /* Reparte o total de exercícios do dia entre grupos primários (compostos) e acessórios (isolados).
    O volume acessório nunca ultrapassa metade do total (logo, nunca ultrapassa o volume primário) —
    evita o desequilíbrio de um grupo acessório (ex: Bíceps) superar o grupo primário pareado (ex: Costas).
    Quando não há espaço para todos os acessórios no dia, o rng escolhe quais entram (rotação entre variações). */
-function allocateDaySlots(primary, accessory, total, weightsMap, rng){
+function allocateDaySlots(primary, accessory, total, weightsMap, rng, capsMap){
   const nPrimary = primary.length, nAcc = accessory.length;
-  if(nAcc === 0) return { primaryCounts: allocateExerciseCounts(primary, total, weightsMap), accessoryCounts: [] };
+  if(nAcc === 0) return { primaryCounts: allocateExerciseCounts(primary, total, weightsMap, capsMap), accessoryCounts: [] };
   const accSlots = Math.max(0, Math.min(nAcc, Math.floor(total / 2), total - nPrimary));
   const primarySlots = total - accSlots;
-  const primaryCounts = allocateExerciseCounts(primary, primarySlots, weightsMap);
+  const primaryCounts = allocateExerciseCounts(primary, primarySlots, weightsMap, capsMap);
   const accessoryCounts = accessory.map(() => 0);
   if(accSlots > 0){
     const order = accessory.map((_, i) => i);
@@ -707,7 +758,7 @@ function allocateDaySlots(primary, accessory, total, weightsMap, rng){
     }
     const chosen = order.slice(0, Math.min(accSlots, nAcc));
     const chosenGroups = chosen.map(i => accessory[i]);
-    const counts = allocateExerciseCounts(chosenGroups, accSlots, weightsMap);
+    const counts = allocateExerciseCounts(chosenGroups, accSlots, weightsMap, capsMap);
     chosen.forEach((idx, ci) => { accessoryCounts[idx] = counts[ci]; });
   }
   return { primaryCounts, accessoryCounts };
@@ -719,15 +770,23 @@ function seededRng(str){ return mulberry32(strToSeed(str)); }
 function pickN(pool, n, rng, excludeSet, preferFn){
   const copy = pool.filter(x => !excludeSet.has(x.key));
   const chosen = [];
-  const usedPatterns = new Set();
+  const usedIllust = new Set();
+  const usedPattern = new Set();
   while(chosen.length < n && copy.length){
-    const scored = copy.map(x => (preferFn && preferFn(x) ? 2 : 0) + (usedPatterns.has(x.illust) ? 0 : 1));
+    // além de variar o desenho (illust), quando o exercício carrega um "pattern" de movimento
+    // (hoje só o Abdômen: flexão / anti-extensão / rotação) prioriza cobrir padrões diferentes
+    // em vez de repetir o mesmo — McGill (core training) recomenda variar o tipo de estímulo do
+    // core em vez de empilhar só exercícios de flexão de coluna (ex: várias variações de crunch).
+    const scored = copy.map(x => (preferFn && preferFn(x) ? 2 : 0)
+      + (usedIllust.has(x.illust) ? 0 : 1)
+      + (x.pattern && !usedPattern.has(x.pattern) ? 1 : 0));
     const maxScore = Math.max(...scored);
     const candidates = copy.filter((x, i) => scored[i] === maxScore);
     const idx = Math.floor(rng() * candidates.length);
     const picked = candidates[idx];
     chosen.push(picked);
-    usedPatterns.add(picked.illust);
+    usedIllust.add(picked.illust);
+    if(picked.pattern) usedPattern.add(picked.pattern);
     copy.splice(copy.indexOf(picked), 1);
   }
   chosen.forEach(c => excludeSet.add(c.key));
@@ -750,6 +809,7 @@ const DAY_THEMES = {
   'Ombro|Peito|Tríceps':'🚀 Push Supremo',
   'Bíceps|Costas':'🪝 Puxada Poderosa',
   'Abdômen|Pernas':'🧨 Core Explosivo',
+  'Abdômen|Bíceps|Tríceps':'🦾 Braços & Core',
   'Peito|Tríceps':'💥 Impacto Frontal',
   'Abdômen|Ombro':'🌪️ Ombros em Fúria',
   'Pernas':'🐘 Dia da Perna',
@@ -823,7 +883,7 @@ function generateVariation(goal, level, variationIndex, nonce, focus, sex, durat
     const primary = day.primary || day.groups || [];
     const accessory = day.accessory || [];
     const groups = [...primary, ...accessory];
-    const { primaryCounts, accessoryCounts } = allocateDaySlots(primary, accessory, exPerDay, weightsMap, rng);
+    const { primaryCounts, accessoryCounts } = allocateDaySlots(primary, accessory, exPerDay, weightsMap, rng, GROUP_MAX_PER_SESSION);
     const exercises = [];
     primary.forEach((g, gi) => {
       const picks = pickN(EXERCISE_CATALOG[g] || [], primaryCounts[gi], rng, used, preferFnForGroup(g, focus));
