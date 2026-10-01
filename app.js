@@ -1040,6 +1040,7 @@ let Drafts = {
   generator:{ goal:null, level:'intermediario', focus:[], splitType:'padrao', duration:90, nonce:0, tierIndex:1, exOffset:0 },
   execHome:{ expandedDow:null },
   restTimer:{ running:false, duration:90, remaining:90, intervalId:null },
+  photoMeal:{ status:'idle', result:null, form:null, error:null }, // status: idle | loading | ready | error
 };
 
 /* ---------- toast ---------- */
@@ -2112,6 +2113,18 @@ function renderDietaRegister(){
   const today = todayStr();
   const logs = state.dietLogs.filter(l => l.date === today);
   const picker = Drafts.registerPicker;
+  const pm = Drafts.photoMeal;
+  const photoBlock = `
+    <div class="card">
+      <h3>📷 Registrar por foto do prato</h3>
+      <div class="muted" style="margin-bottom:4px;">Tire uma foto da refeição e a IA estima as calorias e macros — você confirma ou ajusta antes de salvar.</div>
+      <input type="file" id="meal-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleMealPhotoSelected(this)"/>
+      ${pm.status === 'loading'
+        ? `<button class="btn btn-ghost" disabled>Analisando foto…</button>`
+        : `<button class="btn btn-secondary" onclick="document.getElementById('meal-photo-input').click()">Tirar ou escolher foto</button>`}
+      ${pm.status === 'error' ? `<div class="tiny" style="color:var(--danger);margin-top:6px;">${esc(pm.error)}</div>` : ''}
+      ${pm.status === 'ready' ? renderMealPhotoReview() : ''}
+    </div>`;
   const mealsBlock = state.dietPlan.meals.length === 0 ? '' : `
     <div class="card"><h3>Refeições do plano</h3>
       ${state.dietPlan.meals.map(meal => `
@@ -2125,6 +2138,7 @@ function renderDietaRegister(){
         </div>`).join('')}
     </div>`;
   return `
+    ${photoBlock}
     ${mealsBlock}
     <div class="card">
       <h3>Adicionar alimento avulso</h3>
@@ -2136,7 +2150,7 @@ function renderDietaRegister(){
     <div class="card"><h3>Registrado hoje</h3>
       ${logs.length === 0 ? `<div class="empty">Nada registrado ainda hoje.</div>` :
         logs.map(l => `<div class="list-row">
-            <div><div>${esc(l.foodName)} · ${l.grams}g${l.mealName?` (${esc(l.mealName)})`:''}</div>
+            <div><div>${esc(l.foodName)}${l.grams?` · ${l.grams}g`:''}${l.mealName?` (${esc(l.mealName)})`:''}</div>
               <div class="tiny">${round(l.kcal)} kcal · P${round(l.proteinG)} C${round(l.carbsG)} G${round(l.fatG)}</div></div>
             <button class="icon-btn danger" onclick="removeDietLog('${l.id}')">${ICON.trash}</button>
           </div>`).join('')}
@@ -2158,6 +2172,91 @@ function logCustomFood(){
   const m = macrosForGrams(food, grams);
   state.dietLogs.push({ id:uid(), date:todayStr(), foodId:food.id, foodName:food.name, grams, kcal:m.kcal, proteinG:m.proteinG, carbsG:m.carbsG, fatG:m.fatG });
   saveState(); Drafts.registerPicker = { foodId:null, grams:'100' }; refresh(); toast('Alimento registrado');
+}
+
+/* ---------- registro de refeição por foto (Claude com visão, via Edge Function) ---------- */
+function resizeImageFile(file, maxDim){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if(width > maxDim || height > maxDim){
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale); height = Math.round(height * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não foi possível ler a imagem.')); };
+    img.src = url;
+  });
+}
+async function handleMealPhotoSelected(input){
+  const file = input.files && input.files[0];
+  input.value = '';
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ toast('Escolha um arquivo de imagem', 'error'); return; }
+  if(!AppCloud.isConfigured()){ toast('Esse recurso precisa da nuvem configurada', 'error'); return; }
+  Drafts.photoMeal = { status:'loading', result:null, form:null, error:null };
+  refresh();
+  try{
+    // reduz a imagem antes de enviar: mais rápido no celular e evita estourar o limite da função
+    const dataUrl = await resizeImageFile(file, 1024);
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const result = await AppCloud.analyzeMealPhoto(base64, 'image/jpeg');
+    Drafts.photoMeal = {
+      status:'ready', result, error:null,
+      form:{
+        name: result.items.map(i => i.name).join(', '),
+        kcal:String(Math.round(result.total_kcal)),
+        protein:String(Math.round(result.total_protein_g)),
+        carbs:String(Math.round(result.total_carbs_g)),
+        fat:String(Math.round(result.total_fat_g)),
+      },
+    };
+  }catch(e){
+    Drafts.photoMeal = { status:'error', result:null, form:null, error:(e && e.message) || 'Não foi possível analisar a foto.' };
+  }
+  refresh();
+}
+function cancelMealPhoto(){ Drafts.photoMeal = { status:'idle', result:null, form:null, error:null }; refresh(); }
+function confirmMealPhotoLog(){
+  const f = Drafts.photoMeal.form;
+  const name = (f.name || '').trim();
+  const kcal = toNum(f.kcal, 0), proteinG = toNum(f.protein, 0), carbsG = toNum(f.carbs, 0), fatG = toNum(f.fat, 0);
+  if(!name || kcal <= 0){ toast('Confira o nome e as calorias antes de registrar', 'error'); return; }
+  state.dietLogs.push({ id:uid(), date:todayStr(), foodId:null, foodName:name, grams:null, kcal, proteinG, carbsG, fatG, source:'photo' });
+  saveState();
+  Drafts.photoMeal = { status:'idle', result:null, form:null, error:null };
+  refresh(); toast('Refeição registrada a partir da foto!');
+}
+function renderMealPhotoReview(){
+  const pm = Drafts.photoMeal;
+  const r = pm.result, f = pm.form;
+  return `
+    <div class="divider"></div>
+    <div class="tiny" style="margin:6px 0;">${esc(r.note)} <span style="font-weight:700;">· confiança ${r.confidence}</span></div>
+    <div class="stack" style="margin-bottom:8px;gap:3px;">
+      ${r.items.map(it => `<div class="between tiny"><span>${esc(it.name)} · ${round(it.estimated_grams)}g</span><span class="num">${round(it.kcal)} kcal</span></div>`).join('')}
+    </div>
+    <div class="field"><label>Nome da refeição</label><input value="${esc(f.name)}" oninput="Drafts.photoMeal.form.name=this.value"/></div>
+    <div class="row">
+      <div class="field"><label>Calorias</label><input inputmode="numeric" value="${esc(f.kcal)}" oninput="Drafts.photoMeal.form.kcal=this.value"/></div>
+      <div class="field"><label>Proteína (g)</label><input inputmode="decimal" value="${esc(f.protein)}" oninput="Drafts.photoMeal.form.protein=this.value"/></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Carboidrato (g)</label><input inputmode="decimal" value="${esc(f.carbs)}" oninput="Drafts.photoMeal.form.carbs=this.value"/></div>
+      <div class="field"><label>Gordura (g)</label><input inputmode="decimal" value="${esc(f.fat)}" oninput="Drafts.photoMeal.form.fat=this.value"/></div>
+    </div>
+    <div class="row">
+      <button class="btn btn-ghost" onclick="cancelMealPhoto()">Descartar</button>
+      <button class="btn btn-primary" onclick="confirmMealPhotoLog()">Registrar refeição</button>
+    </div>
+  `;
 }
 
 /* ---------- CARDIO ---------- */

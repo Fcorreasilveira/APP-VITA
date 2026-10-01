@@ -62,6 +62,20 @@ const AppCloud = (() => {
     return data ? data.data : null;
   }
 
+  // Manda a foto do prato pra Edge Function (analyze-meal-photo), que chama a API da Anthropic
+  // com a chave guardada só no servidor — a chave nunca passa pelo navegador.
+  async function analyzeMealPhoto(imageBase64, mediaType){
+    const c = getClient();
+    if(!c) throw new Error('Supabase não configurado.');
+    const { data, error } = await c.functions.invoke('analyze-meal-photo', { body: { imageBase64, mediaType } });
+    if(error){
+      let msg = 'Não foi possível analisar a foto.';
+      try{ const body = await error.context.json(); if(body && body.error) msg = body.error; }catch(e){}
+      throw new Error(msg);
+    }
+    return data;
+  }
+
   let saveTimer = null;
   let pendingState = null;
   async function flushSave(){
@@ -97,5 +111,5 @@ const AppCloud = (() => {
   function isConfigured(){ return !!getClient(); }
   function getCurrentUser(){ return currentUser; }
 
-  return { getSession, onAuthChange, signUp, signIn, signOut, loadRemoteState, saveRemoteState, flushSave, isConfigured, getCurrentUser };
+  return { getSession, onAuthChange, signUp, signIn, signOut, loadRemoteState, saveRemoteState, flushSave, isConfigured, getCurrentUser, analyzeMealPhoto };
 })();
