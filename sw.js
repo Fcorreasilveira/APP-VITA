@@ -1,7 +1,7 @@
 // Service worker do VITA — controla cache e atualização de versão do app.
 // Toda vez que você fizer o deploy de uma mudança relevante, troque o número
 // abaixo (ex: 'vita-v2') para forçar os aparelhos a buscarem a versão nova.
-const CACHE_NAME = 'vita-v8';
+const CACHE_NAME = 'vita-v9';
 
 const APP_SHELL = [
   './',

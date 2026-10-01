@@ -1018,6 +1018,7 @@ function buildSeed(){
 let state = null;
 let AUTH_USER = null;
 function saveState(){
+  state.updatedAt = Date.now();
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
   if(typeof AppCloud !== 'undefined' && AppCloud.isConfigured()) AppCloud.saveRemoteState(state);
 }
@@ -1074,9 +1075,23 @@ function goBack(){
 function treinoGo(v, id){
   UI.treinoView = id ? { v, id } : { v };
   if(v === 'plan') Drafts.treinoPlan = buildPlanDraft(id);
-  if(v === 'execute') Drafts.execute = buildExecuteDraft(id);
+  if(v === 'execute') resumeOrStartExecution(id);
   if(v === 'gerador' && !Drafts.generator.goal) Drafts.generator.goal = state.profile.goal || 'manter';
   refresh();
+}
+/* Série marcada, peso digitado, exercício extra adicionado — nada disso valia nada até "Finalizar
+   treino" ser tocado: se o app fosse fechado ou recarregado no meio do treino (muito comum no
+   celular — tela trava, liga a tela e troca de app pra olhar o descanso, etc.), tudo era perdido.
+   Agora o progresso vive em state.activeExecution (persistido), e reabrir o mesmo plano retoma de
+   onde parou em vez de começar do zero. */
+function resumeOrStartExecution(planId){
+  if(state.activeExecution && state.activeExecution.planId === planId){
+    Drafts.execute = state.activeExecution;
+    return;
+  }
+  Drafts.execute = buildExecuteDraft(planId);
+  state.activeExecution = Drafts.execute;
+  saveState();
 }
 function dietaGo(v){
   UI.dietaView = { v };
@@ -1252,7 +1267,7 @@ function renderTodayWorkoutCard(workoutToday, showTreinoLink){
 function startWorkout(planId){
   UI.tab = 'treino';
   UI.treinoView = { v:'execute', id:planId };
-  Drafts.execute = buildExecuteDraft(planId);
+  resumeOrStartExecution(planId);
   renderShell();
 }
 function renderHomeCalendar(){
@@ -1605,9 +1620,11 @@ function archiveActivePlans(){
   });
   state.planHistory.unshift({ id:uid(), archivedAt:todayStr(), plans:archivedPlans });
   state.workoutPlans = [];
+  state.activeExecution = null;
 }
 function deleteWorkoutPlan(id){
   if(!confirm('Excluir este plano de treino?')) return;
+  if(state.activeExecution && state.activeExecution.planId === id) state.activeExecution = null;
   state.workoutPlans = state.workoutPlans.filter(p => p.id !== id);
   Object.keys(state.workoutSchedule).forEach(k => { if(state.workoutSchedule[k] === id) state.workoutSchedule[k] = null; });
   saveState(); refresh(); toast('Plano excluído');
@@ -1887,10 +1904,10 @@ function toggleSetDone(exIdx, setIdx){
   const entry = Drafts.execute.entries[exIdx];
   entry.sets[setIdx].done = !entry.sets[setIdx].done;
   entry.forceExpanded = false;
-  refresh();
+  saveState(); refresh();
 }
 function collapseExercise(exIdx){ Drafts.execute.entries[exIdx].forceExpanded = false; refresh(); }
-function addSetToExec(exIdx){ Drafts.execute.entries[exIdx].sets.push({ reps:'', weightKg:'', done:false }); refresh(); }
+function addSetToExec(exIdx){ Drafts.execute.entries[exIdx].sets.push({ reps:'', weightKg:'', done:false }); saveState(); refresh(); }
 function finishWorkout(){
   const d = Drafts.execute;
   const entries = d.entries.map(ex => ({
@@ -1899,6 +1916,7 @@ function finishWorkout(){
   }));
   if(!entries.some(e => e.sets.length > 0)){ toast('Marque ao menos uma série como concluída', 'error'); return; }
   state.workoutLogs.push({ id:uid(), planId:d.planId, planName:d.planName, date:todayStr(), entries });
+  state.activeExecution = null;
   clearInterval(Drafts.restTimer.intervalId); Drafts.restTimer = { running:false, duration:90, remaining:90, intervalId:null };
   saveState(); toast('Treino registrado!'); treinoGo('today');
 }
@@ -2423,16 +2441,20 @@ function applyLoadedState(loaded){
 async function bootApp(){
   AUTH_USER = AppCloud.getCurrentUser();
   const remote = await AppCloud.loadRemoteState();
-  if(remote){
+  const local = loadState();
+  // Nunca confia cegamente na nuvem: o envio pro Supabase é assíncrono (debounced), então se o app
+  // recarregar logo depois de uma ação (ex: escolher um treino) o envio pode não ter chegado ainda —
+  // nesse caso a cópia local, mais nova, não pode ser substituída pela cópia antiga da nuvem. Decide
+  // por quem tem o "updatedAt" mais recente, não por qual fonte é a nuvem.
+  const remoteTime = remote && remote.updatedAt || 0;
+  const localTime = local && local.updatedAt || 0;
+  if(remote && remoteTime >= localTime){
     applyLoadedState(remote);
+  } else if(local){
+    applyLoadedState(local);
+    AppCloud.saveRemoteState(state); // local está mais atualizado (ou é a única cópia) — sincroniza de volta pra nuvem
   } else {
-    const local = loadState();
-    if(local){
-      applyLoadedState(local);
-      AppCloud.saveRemoteState(state); // migra dados locais existentes para a nuvem na primeira vez
-    } else {
-      UI.onboarding = true;
-    }
+    UI.onboarding = true;
   }
   renderShell();
 }
