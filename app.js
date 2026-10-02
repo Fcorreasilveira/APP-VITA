@@ -71,6 +71,31 @@ function calcEnergy(p){
 }
 function calcBMI(w,h){ const m = h/100; return w/(m*m); }
 function macrosForGrams(food, g){ const f = g/100; return { kcal:food.kcal100*f, proteinG:food.protein100*f, carbsG:food.carbs100*f, fatG:food.fat100*f }; }
+/* Resolve quanto em gramas uma quantidade informada representa — em gramas direto, ou em unidades
+   (ex: "2 ovos") multiplicado pelo peso de 1 unidade do alimento. Usado em todo lugar que deixa
+   escolher um alimento do catálogo e informar quantidade (avulso, prato, plano alimentar). */
+function resolveQtyGrams(food, qty){
+  if(qty.mode === 'un' && food && food.unitGrams) return toNum(qty.unitQty, 0) * food.unitGrams;
+  return toNum(qty.grams, 0);
+}
+/* Campos de quantidade pra um alimento do catálogo: só gramas quando o alimento não tem unidade
+   definida; gramas OU unidade (com um seletor) quando tem — ex: ovo, fatia de pão, scoop de whey.
+   `path` é o caminho (string) do objeto Drafts.*.qty correspondente, interpolado direto no onclick/
+   oninput — mesmo padrão já usado em todo o resto da tela de dieta. */
+function qtyFieldsHTML(food, qty, path){
+  if(!food || !food.unitLabel){
+    return `<div class="field"><label>Quantidade (g)</label><input inputmode="numeric" value="${esc(qty.grams)}" oninput="${path}.grams=this.value"/></div>`;
+  }
+  return `
+    <div class="chips" style="margin-bottom:2px;">
+      <button class="chip ${qty.mode!=='un'?'active':''}" onclick="${path}.mode='g'; refresh();">Gramas</button>
+      <button class="chip ${qty.mode==='un'?'active':''}" onclick="${path}.mode='un'; refresh();">${esc(food.unitLabel)}(s)</button>
+    </div>
+    ${qty.mode === 'un'
+      ? `<div class="field"><label>Quantidade (${esc(food.unitLabel)}s)</label><input inputmode="decimal" value="${esc(qty.unitQty)}" oninput="${path}.unitQty=this.value"/></div>`
+      : `<div class="field"><label>Quantidade (g)</label><input inputmode="numeric" value="${esc(qty.grams)}" oninput="${path}.grams=this.value"/></div>`}
+  `;
+}
 
 /* ---------- icons ---------- */
 const ICON = {
@@ -918,16 +943,74 @@ function useGeneratedVariation(goal, level, vIdx, nonce, focus, sex, duration, s
 }
 
 /* ---------- seed data ---------- */
+/* unitLabel + unitGrams: quando o alimento normalmente é contado em unidades (ovo, fatia, scoop...)
+   em vez de pesado — permite lançar "2 ovos" na interface em vez de ter que adivinhar os gramas. */
 const BASE_FOODS = [
-  { name:'Peito de frango grelhado', kcal100:165, protein100:31, carbs100:0,   fat100:3.6 },
-  { name:'Arroz branco cozido',       kcal100:128, protein100:2.5, carbs100:28,  fat100:0.2 },
-  { name:'Feijão carioca cozido',     kcal100:76,  protein100:4.8, carbs100:13.6,fat100:0.5 },
-  { name:'Batata doce cozida',        kcal100:86,  protein100:1.6, carbs100:20,  fat100:0.1 },
-  { name:'Ovo cozido',                kcal100:155, protein100:13,  carbs100:1.1, fat100:11  },
-  { name:'Banana',                    kcal100:89,  protein100:1.1, carbs100:23,  fat100:0.3 },
-  { name:'Aveia em flocos',           kcal100:389, protein100:16.9,carbs100:66,  fat100:6.9 },
-  { name:'Whey protein (pó)',         kcal100:400, protein100:80,  carbs100:8,   fat100:5   },
-  { name:'Pão integral',              kcal100:247, protein100:13,  carbs100:41,  fat100:3.4 },
+  // proteínas
+  { name:'Peito de frango grelhado',  kcal100:165, protein100:31,  carbs100:0,    fat100:3.6 },
+  { name:'Coxa de frango assada',     kcal100:209, protein100:26,  carbs100:0,    fat100:10.9 },
+  { name:'Carne bovina (patinho)',    kcal100:163, protein100:31,  carbs100:0,    fat100:4.2 },
+  { name:'Carne moída (acém)',        kcal100:212, protein100:26,  carbs100:0,    fat100:11.5 },
+  { name:'Picanha grelhada',          kcal100:289, protein100:25,  carbs100:0,    fat100:21 },
+  { name:'Lombo suíno grelhado',      kcal100:210, protein100:28,  carbs100:0,    fat100:10 },
+  { name:'Tilápia grelhada',          kcal100:128, protein100:26,  carbs100:0,    fat100:2.7 },
+  { name:'Salmão grelhado',           kcal100:208, protein100:20,  carbs100:0,    fat100:13 },
+  { name:'Atum em lata (água)',       kcal100:116, protein100:26,  carbs100:0,    fat100:1 },
+  { name:'Ovo cozido',                kcal100:155, protein100:13,  carbs100:1.1,  fat100:11,  unitLabel:'ovo', unitGrams:50 },
+  { name:'Ovo frito',                 kcal100:196, protein100:14,  carbs100:0.8,  fat100:15,  unitLabel:'ovo', unitGrams:50 },
+  { name:'Clara de ovo',              kcal100:52,  protein100:11,  carbs100:0.7,  fat100:0.2, unitLabel:'clara', unitGrams:33 },
+  { name:'Whey protein (pó)',         kcal100:400, protein100:80,  carbs100:8,    fat100:5,   unitLabel:'scoop', unitGrams:30 },
+  { name:'Tofu firme',                kcal100:76,  protein100:8,   carbs100:1.9,  fat100:4.8 },
+  // carboidratos e cereais
+  { name:'Arroz branco cozido',       kcal100:128, protein100:2.5, carbs100:28,   fat100:0.2 },
+  { name:'Arroz integral cozido',     kcal100:124, protein100:2.6, carbs100:25.8, fat100:1 },
+  { name:'Macarrão cozido',           kcal100:158, protein100:5.8, carbs100:31,   fat100:0.9 },
+  { name:'Batata doce cozida',        kcal100:86,  protein100:1.6, carbs100:20,   fat100:0.1 },
+  { name:'Batata inglesa cozida',     kcal100:87,  protein100:1.9, carbs100:20,   fat100:0.1 },
+  { name:'Mandioca cozida',           kcal100:125, protein100:0.6, carbs100:30,   fat100:0.3 },
+  { name:'Aveia em flocos',           kcal100:389, protein100:16.9,carbs100:66,   fat100:6.9 },
+  { name:'Granola',                   kcal100:471, protein100:10,  carbs100:64,   fat100:20 },
+  { name:'Tapioca (goma)',            kcal100:240, protein100:0.2, carbs100:59,   fat100:0 },
+  { name:'Pão integral',              kcal100:247, protein100:13,  carbs100:41,   fat100:3.4,  unitLabel:'fatia', unitGrams:25 },
+  { name:'Pão francês',               kcal100:300, protein100:8,   carbs100:58,   fat100:3.1,  unitLabel:'unidade', unitGrams:50 },
+  { name:'Pão de forma branco',       kcal100:266, protein100:9,   carbs100:49,   fat100:3.3,  unitLabel:'fatia', unitGrams:25 },
+  { name:'Cuscuz de milho cozido',    kcal100:112, protein100:2.3, carbs100:24,   fat100:0.3 },
+  // leguminosas
+  { name:'Feijão carioca cozido',     kcal100:76,  protein100:4.8, carbs100:13.6, fat100:0.5 },
+  { name:'Feijão preto cozido',       kcal100:77,  protein100:4.5, carbs100:14,   fat100:0.5 },
+  { name:'Lentilha cozida',           kcal100:116, protein100:9,   carbs100:20,   fat100:0.4 },
+  { name:'Grão de bico cozido',       kcal100:164, protein100:8.9, carbs100:27,   fat100:2.6 },
+  // vegetais e saladas
+  { name:'Alface',                    kcal100:15,  protein100:1.4, carbs100:2.9,  fat100:0.2 },
+  { name:'Tomate',                    kcal100:18,  protein100:0.9, carbs100:3.9,  fat100:0.2 },
+  { name:'Pepino',                    kcal100:15,  protein100:0.7, carbs100:3.6,  fat100:0.1 },
+  { name:'Cenoura crua',              kcal100:41,  protein100:0.9, carbs100:9.6,  fat100:0.2 },
+  { name:'Brócolis cozido',           kcal100:35,  protein100:2.4, carbs100:7.2,  fat100:0.4 },
+  { name:'Couve refogada',            kcal100:50,  protein100:3,   carbs100:6,    fat100:2 },
+  { name:'Abobrinha refogada',        kcal100:27,  protein100:1.5, carbs100:4.6,  fat100:0.5 },
+  { name:'Salada mista (folhas e legumes)', kcal100:25, protein100:1.3, carbs100:4.5, fat100:0.3 },
+  // frutas
+  { name:'Banana',                    kcal100:89,  protein100:1.1, carbs100:23,   fat100:0.3, unitLabel:'unidade', unitGrams:100 },
+  { name:'Maçã',                      kcal100:52,  protein100:0.3, carbs100:14,   fat100:0.2, unitLabel:'unidade', unitGrams:130 },
+  { name:'Laranja',                   kcal100:47,  protein100:0.9, carbs100:12,   fat100:0.1, unitLabel:'unidade', unitGrams:150 },
+  { name:'Mamão',                     kcal100:43,  protein100:0.5, carbs100:11,   fat100:0.3 },
+  { name:'Abacaxi',                   kcal100:50,  protein100:0.5, carbs100:13,   fat100:0.1 },
+  { name:'Morango',                   kcal100:32,  protein100:0.7, carbs100:7.7,  fat100:0.3 },
+  { name:'Abacate',                   kcal100:160, protein100:2,   carbs100:8.5,  fat100:14.7 },
+  // laticínios
+  { name:'Leite integral',            kcal100:61,  protein100:3.2, carbs100:4.8,  fat100:3.3 },
+  { name:'Leite desnatado',           kcal100:35,  protein100:3.4, carbs100:5,    fat100:0.2 },
+  { name:'Iogurte natural',           kcal100:61,  protein100:3.5, carbs100:4.7,  fat100:3.3 },
+  { name:'Iogurte grego natural',     kcal100:97,  protein100:9,   carbs100:4,    fat100:5 },
+  { name:'Queijo minas frescal',      kcal100:264, protein100:17,  carbs100:3.2,  fat100:20,  unitLabel:'fatia', unitGrams:30 },
+  { name:'Queijo muçarela',           kcal100:330, protein100:22,  carbs100:2.2,  fat100:26,  unitLabel:'fatia', unitGrams:20 },
+  { name:'Requeijão',                 kcal100:264, protein100:9,   carbs100:3.2,  fat100:24 },
+  { name:'Cottage',                   kcal100:98,  protein100:11,  carbs100:3.4,  fat100:4.3 },
+  // gorduras e oleaginosas
+  { name:'Azeite de oliva',           kcal100:884, protein100:0,   carbs100:0,    fat100:100, unitLabel:'colher de sopa', unitGrams:13 },
+  { name:'Castanha do Pará',          kcal100:656, protein100:14,  carbs100:12,   fat100:66,  unitLabel:'unidade', unitGrams:5 },
+  { name:'Amendoim torrado',          kcal100:567, protein100:26,  carbs100:16,   fat100:49 },
+  { name:'Pasta de amendoim',         kcal100:588, protein100:25,  carbs100:20,   fat100:50,  unitLabel:'colher de sopa', unitGrams:16 },
 ];
 /* Estado limpo para quem está começando agora (cada instalação/dispositivo tem seu próprio
    localStorage, então cada pessoa que abre o app no próprio celular já parte de um estado
@@ -942,7 +1025,7 @@ function buildEmptyState(profile){
   };
   return {
     profile, bodyMetrics:[], workoutPlans:[], workoutLogs:[], planHistory:[], workoutSchedule:{},
-    cardioSessions:[], cardioLogs:[], foods, dietPlan, dietLogs:[], waterLogs:[],
+    cardioSessions:[], cardioLogs:[], foods, dietPlan, dietLogs:[], waterLogs:[], dishes:[],
   };
 }
 function buildSeed(){
@@ -1010,8 +1093,17 @@ function buildSeed(){
 
   const waterLogs = [ { id:uid(), date:todayStr(), ml:500 }, { id:uid(), date:todayStr(), ml:300 } ];
 
+  const lunch = dietPlan.meals[1];
+  const dishes = [{
+    id:uid(), name:'Marmita de frango com arroz e feijão', source:'manual', createdAt:todayStr(),
+    items: lunch.items.map(item => {
+      const food = foods.find(f => f.id === item.foodId);
+      return { id:uid(), name:item.foodName, kcal100:food.kcal100, protein100:food.protein100, carbs100:food.carbs100, fat100:food.fat100, grams:item.grams };
+    }),
+  }];
+
   const workoutSchedule = autoScheduleFromPlans(workoutPlans.map(p => p.id));
-  return { profile, bodyMetrics, workoutPlans, workoutLogs, planHistory:[], workoutSchedule, cardioSessions, cardioLogs, foods, dietPlan, dietLogs, waterLogs };
+  return { profile, bodyMetrics, workoutPlans, workoutLogs, planHistory:[], workoutSchedule, cardioSessions, cardioLogs, foods, dietPlan, dietLogs, waterLogs, dishes };
 }
 
 /* ---------- persistence ---------- */
@@ -1032,7 +1124,7 @@ let Drafts = {
   onboardingForm:{ name:'', sex:'F', age:'', heightCm:'', weightKg:'', bodyFatPct:'', activityLevel:'moderado', goal:'manter', waterGoalMl:3000 },
   dietPlanForm:null, dietaPlanUI:{ pickingMealId:null, pickFoodId:null, pickGrams:'100', newMealName:'' },
   foodForm:{ name:'', kcal:'', protein:'', carbs:'', fat:'' },
-  registerPicker:{ foodId:null, grams:'100' },
+  registerPicker:{ foodId:null, mode:'g', grams:'100', unitQty:'1' },
   home:{ customWater:'', monthOffset:0 },
   assigningDow:null,
   cardioForm:{ type:'Corrida', duration:'30', distance:'' },
@@ -1040,7 +1132,12 @@ let Drafts = {
   generator:{ goal:null, level:'intermediario', focus:[], splitType:'padrao', duration:90, nonce:0, tierIndex:1, exOffset:0 },
   execHome:{ expandedDow:null },
   restTimer:{ running:false, duration:90, remaining:90, intervalId:null },
-  photoMeal:{ status:'idle', result:null, form:null, error:null }, // status: idle | loading | ready | error
+  photoMeal:{ status:'idle', error:null }, // status: idle | loading | error (sucesso navega pro editor de prato)
+  dishBuilder:{
+    name:'', items:[], pickFoodId:null, qty:{ mode:'g', grams:'100', unitQty:'1' },
+    customItem:{ name:'', kcal:'', protein:'', carbs:'', fat:'' },
+    editingDishId:null,
+  },
 };
 
 /* ---------- toast ---------- */
@@ -1070,6 +1167,7 @@ function goBack(){
     const home = treinoSectionHome(UI.treinoView.v);
     if(UI.treinoView.v !== home) UI.treinoView = { v: home };
   }
+  else if(UI.tab === 'dieta' && UI.dietaView.v === 'dishBuilder') UI.dietaView = { v:'register' };
   else if(UI.tab === 'dieta' && UI.dietaView.v !== 'overview') UI.dietaView = { v:'overview' };
   refresh();
 }
@@ -1098,7 +1196,7 @@ function dietaGo(v){
   UI.dietaView = { v };
   if(v === 'plan'){ Drafts.dietPlanForm = JSON.parse(JSON.stringify(state.dietPlan)); Drafts.dietaPlanUI = { pickingMealId:null, pickFoodId:null, pickGrams:'100', newMealName:'' }; }
   if(v === 'foods') Drafts.foodForm = { name:'', kcal:'', protein:'', carbs:'', fat:'' };
-  if(v === 'register') Drafts.registerPicker = { foodId:null, grams:'100' };
+  if(v === 'register'){ Drafts.registerPicker = { foodId:null, mode:'g', grams:'100', unitQty:'1' }; Drafts.photoMeal = { status:'idle', error:null }; }
   refresh();
 }
 function goDietaRegister(){ UI.tab='dieta'; dietaGo('register'); renderShell(); }
@@ -1153,6 +1251,7 @@ function headerTitle(){
     if(UI.dietaView.v === 'plan') return 'Plano alimentar';
     if(UI.dietaView.v === 'foods') return 'Alimentos';
     if(UI.dietaView.v === 'register') return 'Registrar refeição';
+    if(UI.dietaView.v === 'dishBuilder') return Drafts.dishBuilder.editingDishId ? 'Editar prato' : 'Novo prato';
   }
   if(UI.tab === 'cardio') return 'Cardio';
   if(UI.tab === 'perfil') return 'Perfil';
@@ -1187,6 +1286,7 @@ function renderContent(){
     if(UI.dietaView.v === 'plan') return renderDietaPlanForm();
     if(UI.dietaView.v === 'foods') return renderDietaFoods();
     if(UI.dietaView.v === 'register') return renderDietaRegister();
+    if(UI.dietaView.v === 'dishBuilder') return renderDishBuilder();
   }
   if(UI.tab === 'cardio') return renderCardio();
   if(UI.tab === 'perfil') return renderPerfil();
@@ -2117,13 +2217,12 @@ function renderDietaRegister(){
   const photoBlock = `
     <div class="card">
       <h3>📷 Registrar por foto do prato</h3>
-      <div class="muted" style="margin-bottom:4px;">Tire uma foto da refeição e a IA estima as calorias e macros — você confirma ou ajusta antes de salvar.</div>
+      <div class="muted" style="margin-bottom:4px;">Tire uma foto da refeição e a IA identifica os ingredientes, a quantidade e as calorias de cada um — você ajusta e registra, ou salva como um prato do seu cardápio.</div>
       <input type="file" id="meal-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handleMealPhotoSelected(this)"/>
       ${pm.status === 'loading'
         ? `<button class="btn btn-ghost" disabled>Analisando foto…</button>`
         : `<button class="btn btn-secondary" onclick="document.getElementById('meal-photo-input').click()">Tirar ou escolher foto</button>`}
       ${pm.status === 'error' ? `<div class="tiny" style="color:var(--danger);margin-top:6px;">${esc(pm.error)}</div>` : ''}
-      ${pm.status === 'ready' ? renderMealPhotoReview() : ''}
     </div>`;
   const mealsBlock = state.dietPlan.meals.length === 0 ? '' : `
     <div class="card"><h3>Refeições do plano</h3>
@@ -2137,14 +2236,34 @@ function renderDietaRegister(){
               </div>`).join('')}
         </div>`).join('')}
     </div>`;
+  const pickedFoodForAvulso = state.foods.find(f => f.id === picker.foodId);
+  const dishesBlock = `
+    <div class="card">
+      <div class="between"><h3>🍽 Pratos salvos</h3><span class="btn-link ok" style="width:auto;cursor:pointer;" onclick="startNewDish()">+ Criar prato</span></div>
+      ${state.dishes.length === 0 ? `<div class="empty">Nenhum prato salvo ainda — tire uma foto ou crie um manualmente.</div>` :
+        state.dishes.map(d => {
+          const totals = dishTotals(d);
+          return `<div class="list-row">
+            <div><div style="font-weight:700;">${esc(d.name)}</div>
+              <div class="tiny">${d.items.map(i => esc(i.name)).join(', ')}</div>
+              <div class="tiny">${round(totals.kcal)} kcal · P${round(totals.proteinG)} C${round(totals.carbsG)} G${round(totals.fatG)}</div></div>
+            <div class="row" style="gap:6px;width:auto;">
+              <button class="icon-btn" onclick="editDish('${d.id}')">${ICON.edit || '✏️'}</button>
+              <button class="icon-btn danger" onclick="deleteDish('${d.id}')">${ICON.trash}</button>
+            </div>
+          </div>
+          <button class="btn btn-secondary" style="margin:4px 0 8px;" onclick="logDishToday('${d.id}')">+ Registrar hoje</button>`;
+        }).join('')}
+    </div>`;
   return `
     ${photoBlock}
+    ${dishesBlock}
     ${mealsBlock}
     <div class="card">
       <h3>Adicionar alimento avulso</h3>
       ${state.foods.length === 0 ? `<div class="empty">Cadastre alimentos na biblioteca para registrá-los aqui.</div>` :
         `<div class="chips" style="max-height:150px;overflow-y:auto;">${state.foods.map(f => `<button class="chip ${picker.foodId===f.id?'active':''}" onclick="Drafts.registerPicker.foodId='${f.id}'; refresh();">${esc(f.name)}</button>`).join('')}</div>`}
-      <div class="field"><label>Quantidade (g)</label><input inputmode="numeric" value="${esc(picker.grams)}" oninput="Drafts.registerPicker.grams=this.value"/></div>
+      ${qtyFieldsHTML(pickedFoodForAvulso, picker, 'Drafts.registerPicker')}
       <button class="btn btn-primary" onclick="logCustomFood()">Registrar alimento</button>
     </div>
     <div class="card"><h3>Registrado hoje</h3>
@@ -2167,11 +2286,11 @@ function logMealItem(mealName, foodId, foodName, grams){
 function logCustomFood(){
   const picker = Drafts.registerPicker;
   const food = state.foods.find(f => f.id === picker.foodId);
-  const grams = toNum(picker.grams, 0);
+  const grams = food ? resolveQtyGrams(food, picker) : 0;
   if(!food || !grams){ toast('Escolha um alimento e a quantidade', 'error'); return; }
   const m = macrosForGrams(food, grams);
-  state.dietLogs.push({ id:uid(), date:todayStr(), foodId:food.id, foodName:food.name, grams, kcal:m.kcal, proteinG:m.proteinG, carbsG:m.carbsG, fatG:m.fatG });
-  saveState(); Drafts.registerPicker = { foodId:null, grams:'100' }; refresh(); toast('Alimento registrado');
+  state.dietLogs.push({ id:uid(), date:todayStr(), foodId:food.id, foodName:food.name, grams:round(grams), kcal:m.kcal, proteinG:m.proteinG, carbsG:m.carbsG, fatG:m.fatG });
+  saveState(); Drafts.registerPicker = { foodId:null, mode:'g', grams:'100', unitQty:'1' }; refresh(); toast('Alimento registrado');
 }
 
 /* ---------- registro de refeição por foto (Claude com visão, via Edge Function) ---------- */
@@ -2201,60 +2320,205 @@ async function handleMealPhotoSelected(input){
   if(!file) return;
   if(!file.type.startsWith('image/')){ toast('Escolha um arquivo de imagem', 'error'); return; }
   if(!AppCloud.isConfigured()){ toast('Esse recurso precisa da nuvem configurada', 'error'); return; }
-  Drafts.photoMeal = { status:'loading', result:null, form:null, error:null };
+  Drafts.photoMeal = { status:'loading', error:null };
   refresh();
   try{
     // reduz a imagem antes de enviar: mais rápido no celular e evita estourar o limite da função
     const dataUrl = await resizeImageFile(file, 1024);
     const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
     const result = await AppCloud.analyzeMealPhoto(base64, 'image/jpeg');
-    Drafts.photoMeal = {
-      status:'ready', result, error:null,
-      form:{
-        name: result.items.map(i => i.name).join(', '),
-        kcal:String(Math.round(result.total_kcal)),
-        protein:String(Math.round(result.total_protein_g)),
-        carbs:String(Math.round(result.total_carbs_g)),
-        fat:String(Math.round(result.total_fat_g)),
-      },
+    // cada ingrediente identificado vira um item do montador de prato (mesma tela usada pra criar
+    // um prato manualmente) — dá pra ajustar a gramatura de cada um, remover ou adicionar mais itens
+    // do catálogo antes de registrar ou salvar como prato do cardápio.
+    Drafts.dishBuilder = {
+      name: result.items.map(i => i.name).join(', '),
+      items: result.items.map(it => {
+        const grams = Math.max(1, round(it.estimated_grams));
+        return {
+          id:uid(), name:it.name, grams,
+          kcal100: it.kcal / grams * 100, protein100: it.protein_g / grams * 100,
+          carbs100: it.carbs_g / grams * 100, fat100: it.fat_g / grams * 100,
+          mode:'g', unitQty:null, unitLabel:null, unitGrams:null,
+        };
+      }),
+      pickFoodId:null, qty:{ mode:'g', grams:'100', unitQty:'1' },
+      customItem:{ name:'', kcal:'', protein:'', carbs:'', fat:'' },
+      editingDishId:null, photoNote:`${result.note} (confiança ${result.confidence})`,
     };
+    Drafts.photoMeal = { status:'idle', error:null };
+    dietaGo('dishBuilder');
+    return;
   }catch(e){
-    Drafts.photoMeal = { status:'error', result:null, form:null, error:(e && e.message) || 'Não foi possível analisar a foto.' };
+    Drafts.photoMeal = { status:'error', error:(e && e.message) || 'Não foi possível analisar a foto.' };
   }
   refresh();
 }
-function cancelMealPhoto(){ Drafts.photoMeal = { status:'idle', result:null, form:null, error:null }; refresh(); }
-function confirmMealPhotoLog(){
-  const f = Drafts.photoMeal.form;
-  const name = (f.name || '').trim();
-  const kcal = toNum(f.kcal, 0), proteinG = toNum(f.protein, 0), carbsG = toNum(f.carbs, 0), fatG = toNum(f.fat, 0);
-  if(!name || kcal <= 0){ toast('Confira o nome e as calorias antes de registrar', 'error'); return; }
-  state.dietLogs.push({ id:uid(), date:todayStr(), foodId:null, foodName:name, grams:null, kcal, proteinG, carbsG, fatG, source:'photo' });
-  saveState();
-  Drafts.photoMeal = { status:'idle', result:null, form:null, error:null };
-  refresh(); toast('Refeição registrada a partir da foto!');
+
+/* ---------- pratos (cardápio de refeições reutilizáveis) ---------- */
+function sumMacros(items){
+  return items.reduce((acc, it) => {
+    const m = macrosForGrams(it, it.grams);
+    acc.kcal += m.kcal; acc.proteinG += m.proteinG; acc.carbsG += m.carbsG; acc.fatG += m.fatG;
+    return acc;
+  }, { kcal:0, proteinG:0, carbsG:0, fatG:0 });
 }
-function renderMealPhotoReview(){
-  const pm = Drafts.photoMeal;
-  const r = pm.result, f = pm.form;
+function dishTotals(dish){ return sumMacros(dish.items); }
+function startNewDish(){
+  Drafts.dishBuilder = {
+    name:'', items:[], pickFoodId:null, qty:{ mode:'g', grams:'100', unitQty:'1' },
+    customItem:{ name:'', kcal:'', protein:'', carbs:'', fat:'' }, editingDishId:null, photoNote:null,
+  };
+  dietaGo('dishBuilder');
+}
+function editDish(id){
+  const dish = state.dishes.find(d => d.id === id);
+  if(!dish) return;
+  Drafts.dishBuilder = {
+    name:dish.name, items:JSON.parse(JSON.stringify(dish.items)),
+    pickFoodId:null, qty:{ mode:'g', grams:'100', unitQty:'1' },
+    customItem:{ name:'', kcal:'', protein:'', carbs:'', fat:'' }, editingDishId:dish.id, photoNote:null,
+  };
+  dietaGo('dishBuilder');
+}
+function deleteDish(id){
+  if(!confirm('Excluir este prato salvo?')) return;
+  state.dishes = state.dishes.filter(d => d.id !== id);
+  saveState(); refresh(); toast('Prato excluído');
+}
+function logDishToday(id){
+  const dish = state.dishes.find(d => d.id === id);
+  if(!dish) return;
+  dish.items.forEach(it => {
+    const m = macrosForGrams(it, it.grams);
+    state.dietLogs.push({ id:uid(), date:todayStr(), foodId:null, foodName:it.name, grams:round(it.grams), kcal:m.kcal, proteinG:m.proteinG, carbsG:m.carbsG, fatG:m.fatG, dishName:dish.name });
+  });
+  saveState(); refresh(); toast(`"${dish.name}" registrado hoje`);
+}
+function addCatalogItemToDish(){
+  const db = Drafts.dishBuilder;
+  const food = state.foods.find(f => f.id === db.pickFoodId);
+  if(!food){ toast('Escolha um alimento', 'error'); return; }
+  const grams = resolveQtyGrams(food, db.qty);
+  if(!grams){ toast('Informe a quantidade', 'error'); return; }
+  db.items.push({
+    id:uid(), name:food.name, grams:round(grams),
+    kcal100:food.kcal100, protein100:food.protein100, carbs100:food.carbs100, fat100:food.fat100,
+    mode:db.qty.mode, unitQty: db.qty.mode === 'un' ? toNum(db.qty.unitQty, 0) : null,
+    unitLabel: db.qty.mode === 'un' ? food.unitLabel : null, unitGrams: food.unitGrams || null,
+  });
+  db.pickFoodId = null; db.qty = { mode:'g', grams:'100', unitQty:'1' };
+  refresh();
+}
+function addCustomItemToDish(){
+  const db = Drafts.dishBuilder;
+  const c = db.customItem;
+  const name = (c.name || '').trim();
+  const kcal = toNum(c.kcal, 0);
+  if(!name || kcal <= 0){ toast('Informe o nome e as calorias do ingrediente', 'error'); return; }
+  // ingrediente avulso (fora do catálogo): os valores digitados já são os totais da porção —
+  // guarda como se fosse a "taxa por 100g" com grams fixo em 100, assim o mesmo cálculo
+  // (macrosForGrams) funciona igual pros outros itens, inclusive se o usuário editar a gramatura depois.
+  db.items.push({
+    id:uid(), name, grams:100,
+    kcal100:kcal, protein100:toNum(c.protein, 0), carbs100:toNum(c.carbs, 0), fat100:toNum(c.fat, 0),
+    mode:'g', unitQty:null, unitLabel:null, unitGrams:null,
+  });
+  db.customItem = { name:'', kcal:'', protein:'', carbs:'', fat:'' };
+  refresh();
+}
+function removeDishBuilderItem(idx){ Drafts.dishBuilder.items.splice(idx, 1); refresh(); }
+function updateDishBuilderItemQty(idx, field, val){
+  const it = Drafts.dishBuilder.items[idx];
+  if(!it) return;
+  if(field === 'unitQty'){ it.unitQty = toNum(val, 0); it.grams = it.unitGrams ? round(it.unitQty * it.unitGrams) : it.grams; }
+  else { it.grams = toNum(val, 0); }
+  refresh();
+}
+function saveDishBuilderAsDish(){
+  const db = Drafts.dishBuilder;
+  const name = (db.name || '').trim();
+  if(!name){ toast('Dê um nome pro prato', 'error'); return; }
+  if(db.items.length === 0){ toast('Adicione pelo menos um ingrediente', 'error'); return; }
+  const itemsSnapshot = db.items.map(it => ({ id:it.id, name:it.name, grams:it.grams, kcal100:it.kcal100, protein100:it.protein100, carbs100:it.carbs100, fat100:it.fat100 }));
+  if(db.editingDishId){
+    const dish = state.dishes.find(d => d.id === db.editingDishId);
+    if(dish){ dish.name = name; dish.items = itemsSnapshot; }
+  } else {
+    state.dishes.push({ id:uid(), name, items:itemsSnapshot, source:db.photoNote ? 'photo' : 'manual', createdAt:todayStr() });
+  }
+  saveState();
+  toast('Prato salvo no cardápio!');
+  dietaGo('register');
+}
+function logDishBuilderToday(){
+  const db = Drafts.dishBuilder;
+  if(db.items.length === 0){ toast('Adicione pelo menos um ingrediente', 'error'); return; }
+  const dishName = (db.name || '').trim() || null;
+  db.items.forEach(it => {
+    const m = macrosForGrams(it, it.grams);
+    state.dietLogs.push({ id:uid(), date:todayStr(), foodId:null, foodName:it.name, grams:round(it.grams), kcal:m.kcal, proteinG:m.proteinG, carbsG:m.carbsG, fatG:m.fatG, dishName });
+  });
+  saveState();
+  toast('Refeição registrada hoje!');
+  dietaGo('register');
+}
+function renderDishBuilder(){
+  const db = Drafts.dishBuilder;
+  const totals = sumMacros(db.items);
+  const pickedFood = state.foods.find(f => f.id === db.pickFoodId);
   return `
-    <div class="divider"></div>
-    <div class="tiny" style="margin:6px 0;">${esc(r.note)} <span style="font-weight:700;">· confiança ${r.confidence}</span></div>
-    <div class="stack" style="margin-bottom:8px;gap:3px;">
-      ${r.items.map(it => `<div class="between tiny"><span>${esc(it.name)} · ${round(it.estimated_grams)}g</span><span class="num">${round(it.kcal)} kcal</span></div>`).join('')}
+    ${db.photoNote ? `<div class="card"><div class="tiny">📷 ${esc(db.photoNote)} — confira e ajuste os ingredientes abaixo antes de registrar.</div></div>` : ''}
+    <div class="card">
+      <div class="field"><label>Nome do prato</label><input value="${esc(db.name)}" oninput="Drafts.dishBuilder.name=this.value" placeholder="Ex: Marmita de frango com arroz"/></div>
+      <div class="stat-grid g4">
+        <div class="stat"><b>${round(totals.kcal)}</b><span>kcal</span></div>
+        <div class="stat"><b>${round(totals.proteinG)}</b><span>proteína</span></div>
+        <div class="stat"><b>${round(totals.carbsG)}</b><span>carbo</span></div>
+        <div class="stat"><b>${round(totals.fatG)}</b><span>gordura</span></div>
+      </div>
     </div>
-    <div class="field"><label>Nome da refeição</label><input value="${esc(f.name)}" oninput="Drafts.photoMeal.form.name=this.value"/></div>
-    <div class="row">
-      <div class="field"><label>Calorias</label><input inputmode="numeric" value="${esc(f.kcal)}" oninput="Drafts.photoMeal.form.kcal=this.value"/></div>
-      <div class="field"><label>Proteína (g)</label><input inputmode="decimal" value="${esc(f.protein)}" oninput="Drafts.photoMeal.form.protein=this.value"/></div>
+    <div class="card">
+      <h3>Ingredientes</h3>
+      ${db.items.length === 0 ? `<div class="empty">Nenhum ingrediente ainda — adicione abaixo.</div>` :
+        db.items.map((it, idx) => {
+          const m = macrosForGrams(it, it.grams);
+          const qtyField = it.unitLabel
+            ? `<input inputmode="decimal" style="width:52px;" value="${it.unitQty}" oninput="updateDishBuilderItemQty(${idx},'unitQty',this.value)"/> ${esc(it.unitLabel)}(s)`
+            : `<input inputmode="numeric" style="width:60px;" value="${it.grams}" oninput="updateDishBuilderItemQty(${idx},'grams',this.value)"/> g`;
+          return `<div class="list-row">
+            <div style="flex:1;">
+              <div style="font-weight:700;">${esc(it.name)}</div>
+              <div class="tiny between" style="gap:8px;">
+                <span>${qtyField}</span>
+                <span class="num">${round(m.kcal)} kcal</span>
+              </div>
+            </div>
+            <button class="icon-btn danger" onclick="removeDishBuilderItem(${idx})">${ICON.trash}</button>
+          </div>`;
+        }).join('')}
+    </div>
+    <div class="card">
+      <h3>Adicionar ingrediente do catálogo</h3>
+      <div class="chips" style="max-height:140px;overflow-y:auto;">${state.foods.map(f => `<button class="chip ${db.pickFoodId===f.id?'active':''}" onclick="Drafts.dishBuilder.pickFoodId='${f.id}'; refresh();">${esc(f.name)}</button>`).join('')}</div>
+      ${qtyFieldsHTML(pickedFood, db.qty, 'Drafts.dishBuilder.qty')}
+      <button class="btn btn-secondary" onclick="addCatalogItemToDish()">+ Adicionar ingrediente</button>
+    </div>
+    <div class="card">
+      <h3>Ingrediente avulso (fora do catálogo)</h3>
+      <div class="field"><label>Nome</label><input value="${esc(db.customItem.name)}" oninput="Drafts.dishBuilder.customItem.name=this.value" placeholder="Ex: Molho caseiro"/></div>
+      <div class="row">
+        <div class="field"><label>Calorias (da porção)</label><input inputmode="numeric" value="${esc(db.customItem.kcal)}" oninput="Drafts.dishBuilder.customItem.kcal=this.value"/></div>
+        <div class="field"><label>Proteína (g)</label><input inputmode="decimal" value="${esc(db.customItem.protein)}" oninput="Drafts.dishBuilder.customItem.protein=this.value"/></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Carboidrato (g)</label><input inputmode="decimal" value="${esc(db.customItem.carbs)}" oninput="Drafts.dishBuilder.customItem.carbs=this.value"/></div>
+        <div class="field"><label>Gordura (g)</label><input inputmode="decimal" value="${esc(db.customItem.fat)}" oninput="Drafts.dishBuilder.customItem.fat=this.value"/></div>
+      </div>
+      <button class="btn btn-ghost" onclick="addCustomItemToDish()">+ Adicionar ingrediente avulso</button>
     </div>
     <div class="row">
-      <div class="field"><label>Carboidrato (g)</label><input inputmode="decimal" value="${esc(f.carbs)}" oninput="Drafts.photoMeal.form.carbs=this.value"/></div>
-      <div class="field"><label>Gordura (g)</label><input inputmode="decimal" value="${esc(f.fat)}" oninput="Drafts.photoMeal.form.fat=this.value"/></div>
-    </div>
-    <div class="row">
-      <button class="btn btn-ghost" onclick="cancelMealPhoto()">Descartar</button>
-      <button class="btn btn-primary" onclick="confirmMealPhotoLog()">Registrar refeição</button>
+      <button class="btn btn-secondary" onclick="saveDishBuilderAsDish()">💾 Salvar no cardápio</button>
+      <button class="btn btn-primary" onclick="logDishBuilderToday()">Registrar hoje</button>
     </div>
   `;
 }
@@ -2535,6 +2799,7 @@ function applyLoadedState(loaded){
   state = loaded;
   if(!state.planHistory) state.planHistory = [];
   if(!state.workoutSchedule) state.workoutSchedule = autoScheduleFromPlans(state.workoutPlans.map(p => p.id));
+  if(!state.dishes) state.dishes = [];
   Drafts.profileForm = JSON.parse(JSON.stringify(state.profile));
 }
 async function bootApp(){
