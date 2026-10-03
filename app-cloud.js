@@ -69,8 +69,13 @@ const AppCloud = (() => {
     if(!c) throw new Error('Supabase não configurado.');
     const { data, error } = await c.functions.invoke('analyze-meal-photo', { body: { imageBase64, mediaType } });
     if(error){
-      let msg = 'Não foi possível analisar a foto.';
-      try{ const body = await error.context.json(); if(body && body.error) msg = body.error; }catch(e){}
+      // começa com o que o próprio supabase-js já sabe (ex: função não encontrada, erro de rede) —
+      // só sobrescreve se conseguir ler um corpo de erro mais específico da função ou do gateway.
+      let msg = error.message || 'Não foi possível analisar a foto.';
+      try{
+        const errBody = await error.context.json();
+        if(errBody && (errBody.error || errBody.message)) msg = errBody.error || errBody.message;
+      }catch(e){}
       throw new Error(msg);
     }
     return data;
